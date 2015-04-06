@@ -1,0 +1,360 @@
+// Copyright (c) 2014-2015 Bitmark Inc.
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+package bilateralrpc
+
+import (
+	"container/list"
+	"errors"
+	"fmt"
+	svrpc "github.com/bitmark-inc/bilateralrpc/rpc"
+	"github.com/bitmark-inc/logger"
+	zmq "github.com/pebbe/zmq4"
+	"reflect"
+	"time"
+)
+
+// sent to all connections value for Call
+var SendToAll = []string{}
+var SendToOne = []string{}
+
+// type to hold the client/server data
+type Bilateral struct {
+	// to stop and wait for shutdown
+	shutdownAll     chan bool
+	rpcShutdown     chan bool
+	reactorShutdown chan bool
+
+	// record all connections
+	connections map[string]*connect
+
+	// for RPC registration
+	server *svrpc.Server
+
+	// this servers identifier
+	encrypted  bool
+	serverName string
+
+	// map RPC IDs to their channels
+	rpcReturns map[uint32]*rpcClientRequestData
+
+	// communication
+	listenSocket   *zmq.Socket
+	outgoingSocket *zmq.Socket
+
+	// RPC queues
+	// for outgoing RPC
+	rpcClientRequestChannel  chan interface{}
+	rpcClientResponseChannel chan interface{}
+
+	// for incoming RPC
+	rpcServerCallChannel chan rpcServerCallData
+	rpcServerBackChannel chan interface{}
+
+	// timeout queue
+	timeoutQueue list.List
+}
+
+// log channel for debugging
+var log *logger.L
+
+// set up the connection (can set plain or encrypted)
+// Nothe that in encrypted mode the public key functions as the server name
+//
+// for plaintext call as:  NewBilateral(server_name)
+//
+// for encrypted call as:  NewBilateral(public_key, private_key)
+//      with values from:  pub, priv, err := NewKeypair()
+func NewBilateral(configuration ...string) *Bilateral {
+
+	n := len(configuration)
+	if n < 1 || n > 2 {
+		panic("NewBilateral must have one or two arguments")
+	}
+
+	if nil == log {
+		log = logger.New("bilateral")
+	}
+
+	twoway := new(Bilateral)
+
+	twoway.serverName = configuration[0]
+	// initialise global data
+
+	twoway.server = svrpc.NewServer()
+	twoway.connections = make(map[string]*connect)
+	twoway.rpcReturns = make(map[uint32]*rpcClientRequestData)
+
+	// for stopping threads
+	twoway.shutdownAll = make(chan bool)
+
+	// RPC buffered streams
+	twoway.rpcClientRequestChannel = make(chan interface{}, 20)
+	twoway.rpcClientResponseChannel = make(chan interface{}, 20)
+	twoway.rpcServerCallChannel = make(chan rpcServerCallData, 20)
+	twoway.rpcServerBackChannel = make(chan interface{}, 20)
+
+	log.Infof("server name: %q", twoway.serverName)
+
+	var err error
+
+	twoway.encrypted = false
+
+	switch n {
+	case 1: // plaintext connection
+		twoway.encrypted = false
+
+		// this is our server side
+		twoway.listenSocket, err = createSocket(plainSocket, twoway.serverName, "")
+		if nil != err {
+			panic(fmt.Sprintf("listen socket: err = %v", err))
+		}
+
+		// prepare socket to connect to to multiple upstreams
+		twoway.outgoingSocket, err = createSocket(plainSocket, twoway.serverName, "")
+		if nil != err {
+			panic(fmt.Sprintf("outgoing socket: err = %v", err))
+		}
+
+	case 2:
+		twoway.encrypted = true
+
+		// this is our server side
+		twoway.listenSocket, err = createSocket(serverSocket, twoway.serverName, configuration[1])
+		if nil != err {
+			panic(fmt.Sprintf("listen socket: err = %v", err))
+		}
+
+		// prepare socket to connect to to multiple upstreams
+		twoway.outgoingSocket, err = createSocket(clientSocket, twoway.serverName, configuration[1])
+		if nil != err {
+			panic(fmt.Sprintf("outgoing socket: err = %v", err))
+		}
+	}
+
+	// set up the reactor to handle all sockets
+	reactor := zmq.NewReactor()
+
+	// incoming from downstream clients
+	reactor.AddSocket(twoway.listenSocket, zmq.POLLIN,
+		func(e zmq.State) error { return twoway.listenHandler() })
+
+	// incoming from upstream servers
+	reactor.AddSocket(twoway.outgoingSocket, zmq.POLLIN,
+		func(e zmq.State) error { return twoway.replyHandler() })
+
+	reactor.AddChannel(twoway.rpcClientRequestChannel, 5,
+		func(item interface{}) error { return twoway.rpcClientRequestHandler(item) })
+
+	reactor.AddChannel(twoway.rpcClientResponseChannel, 5,
+		func(item interface{}) error { return twoway.rpcClientResponseHandler(item) })
+
+	reactor.AddChannel(twoway.rpcServerBackChannel, 5,
+		func(item interface{}) error { return twoway.rpcBackHandler(item) })
+
+	// start an event loop
+	reactor.AddChannelTime(time.Tick(time.Second), 1,
+		func(i interface{}) error { return twoway.sender() })
+
+	// background RPC test routines
+	go twoway.rpcProcedure()
+
+	// start event loop
+	go func() {
+		twoway.reactorShutdown = make(chan bool)
+		defer close(twoway.reactorShutdown)
+		// log <- "reactor start"
+		err := reactor.Run(time.Second)
+		if nil != err {
+			//fmt.Printf("reactor finish: err = %v", err)
+			// log <- fmt.Sprintf(COLOUR_RED+"reactor finish: err = %v"+COLOUR_NORMAL, err)
+		}
+	}()
+
+	return twoway
+}
+
+// shutdown all connections, terminate all background processing
+func (twoway *Bilateral) Close() {
+	log.Info("closing…")
+
+	// disconnect all outgoing connections
+	for to := range twoway.connections {
+		twoway.DisconnectFrom(to)
+	}
+
+	// shutdown background processing
+	close(twoway.shutdownAll)
+
+	// close sockets so reactor will stop
+	twoway.listenSocket.Close()
+	twoway.outgoingSocket.Close()
+
+	log.Info("Close: waiting…")
+
+	// wait for final shutdown
+	<-twoway.rpcShutdown
+	<-twoway.reactorShutdown
+
+	// close any remaining channels
+	close(twoway.rpcClientRequestChannel)
+	close(twoway.rpcClientResponseChannel)
+	close(twoway.rpcServerCallChannel)
+	close(twoway.rpcServerBackChannel)
+
+	// terminate all outstanding calls
+	for _, request := range twoway.rpcReturns {
+		twoway.finishRequest(request)
+	}
+
+	// clear the timeout queue
+	for e := twoway.timeoutQueue.Front(); nil != e; e = e.Prev() {
+		twoway.timeoutQueue.Remove(e)
+	}
+	log.Info("Close: complete")
+}
+
+// listen for incomming requests
+func (twoway *Bilateral) ListenOn(address string) error {
+	log.Infof("set listen on: %s", address)
+	return twoway.listenSocket.Bind(address)
+}
+
+// connect to a remote
+func (twoway *Bilateral) ConnectTo(name string, address string) error {
+	// do not make a loopback connection
+	if twoway.serverName == name {
+		return errors.New("loopback forbidden")
+	}
+
+	if _, exists := twoway.connections[name]; exists {
+		return errors.New("duplicate connection")
+	}
+
+	log.Infof("connect to: %s @ %s", name, address)
+
+	twoway.connections[name] = &connect{
+		timestamp: time.Now().Add(FIRST_START_TIME),
+		name:      name,
+		address:   address,
+		state:     stateWaiting,
+		joinCount: 0,
+		backoff:   0,
+		outgoing:  true,
+		tick:      0,
+	}
+
+	return nil
+}
+
+// disconnect from a remote
+func (twoway *Bilateral) DisconnectFrom(name string) error {
+	_, exists := twoway.connections[name]
+	if !exists {
+		return errors.New("no existing connection")
+	}
+	log.Infof("disconnect from: %s", name)
+	delete(twoway.connections, name)
+	return nil
+}
+
+// count active connections
+func (twoway *Bilateral) ConnectionCount() int {
+	count := 0
+	for _, c := range twoway.connections {
+		if stateConnected == c.state || stateCheck == c.state || stateServing == c.state {
+			count += 1
+		}
+	}
+	return count
+}
+
+// register a callback object
+func (twoway *Bilateral) Register(receiver interface{}) error {
+	return twoway.server.Register(receiver)
+}
+
+// get a list of acive peers names
+func (twoway *Bilateral) ActiveConnections() []string {
+	active := make([]string, 0, len(twoway.connections))
+	for name, c := range twoway.connections {
+		if stateConnected == c.state || stateCheck == c.state || stateServing == c.state {
+			active = append(active, name)
+		}
+	}
+	return active
+}
+
+// actual rpc call routine
+// to can be set to SendToAll to do a broadcast
+func (twoway *Bilateral) Call(to []string, method string, args interface{}, results interface{}, wait time.Duration) error {
+	if nil != to && 0 == len(to) {
+		to = nil
+	}
+
+	if 0 == wait {
+		wait = CALL_TIMEOUT
+	}
+
+	select {
+	case <-twoway.shutdownAll:
+		return errors.New("RPC system shutting down")
+	default:
+	}
+
+	id := nonce()
+
+	ptr := reflect.TypeOf(results)
+	if reflect.Ptr != ptr.Kind() && !reflect.ValueOf(results).IsNil() && reflect.Slice != ptr.Elem().Kind() {
+		return errors.New("must be a non-nil pointer to slice")
+	}
+
+	theSlice := ptr.Elem()
+
+	// ptr to slice of 's' - some kind of struct
+	theStruct := theSlice.Elem()
+	if reflect.Struct != theStruct.Kind() || 3 != theStruct.NumField() {
+		return errors.New("must be a struct with three fields")
+	}
+
+	fromField, hasFrom := theStruct.FieldByName("From")
+	_, hasReply := theStruct.FieldByName("Reply")
+	errField, hasErr := theStruct.FieldByName("Err")
+
+	if !hasFrom || !hasReply || !hasErr {
+		return errors.New("must be a struct with From, Reply and Err fields")
+	}
+
+	if reflect.String != fromField.Type.Kind() {
+		return errors.New("struct From field must be string")
+	}
+
+	if reflect.Interface != errField.Type.Kind() {
+		return errors.New("struct Err field must be error")
+	}
+
+	done := make(chan *rpcClientRequestData)
+	twoway.rpcClientRequestChannel <- &rpcClientRequestData{
+		id:         id,
+		to:         to,
+		wait:       wait,
+		method:     method,
+		args:       args,
+		structType: theStruct,
+		done:       done,
+		reply:      nil, // added later
+		count:      0,   // added later
+	}
+
+	// the processed request will be returned here
+	request := <-done
+
+	received := reflect.MakeSlice(theSlice, 0, len(to))
+	for r := range request.reply {
+		received = reflect.Append(received, r.Elem())
+	}
+	reflect.ValueOf(results).Elem().Set(received)
+
+	return nil
+}
