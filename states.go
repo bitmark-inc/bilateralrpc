@@ -148,7 +148,8 @@ loop:
 			if nil != err {
 				log.Infof("disconnect(MakeServer) err = %v", err)
 			}
-			c.timestamp = time.Now().Add(FIRST_JOIN_TIME)
+			//c.timestamp = time.Now().Add(FIRST_JOIN_TIME)
+			c.timestamp = time.Now().Add(SERVE_TIME)
 			c.state = stateServing
 
 		case stateDestroy:
@@ -162,6 +163,7 @@ loop:
 
 		case stateServing:
 			// only get here if timed out - no client request in SERVE_TIME
+			log.Info("serving timed out")
 			c.state = stateStopped
 
 		case stateWaiting:
@@ -169,7 +171,7 @@ loop:
 			if twoway.encrypted {
 				twoway.outgoingSocket.SetCurveServerkey(c.name)
 			}
-			log.Infof("connect: %s @ %s", to, c.address)
+			log.Infof("waiting connect: %s @ %s", to, c.address)
 			err := twoway.outgoingSocket.Connect(c.address)
 			if nil != err {
 				log.Infof("connect err = %v", err)
@@ -185,7 +187,7 @@ loop:
 				c.joinCount += 1
 				c.timestamp = time.Now().Add(JOIN_TIME)
 				log.Infof("join %d → %s", c.joinCount, to)
-				err = sendPacket(twoway.outgoingSocket, to, "JOIN", []byte{})
+				err = sendPacket(twoway.outgoingSocket, to, "JOIN", []byte(twoway.networkName))
 			} else {
 				log.Infof("handshake disconnect: %s (%s)", c.address, to)
 				twoway.outgoingSocket.Disconnect(c.address)
@@ -249,15 +251,24 @@ func (twoway *Bilateral) listenHandler() error {
 
 	switch command {
 	case "JOIN": // client wants to connect
+		stay := false
 		if c, ok := twoway.connections[from]; ok {
+			log.Debugf("From←: %q  command: %q  state: %#v", from, command, c.state)
 			if stateConnected == c.state || stateCheck == c.state || stateHandshake == c.state {
 				// already have a connection to remote - tell client to disconnect
-				err = sendPacket(twoway.listenSocket, from, "PART", []byte{})
+				stay = false
 			} else {
-				// remote trying to connect, so disconnect my client socket
+				// remote trying to connect, so disconnect my client socket, become server
 				c.state = stateMakeServer
-				err = sendPacket(twoway.listenSocket, from, "STAY", []byte{})
+				//c.timestamp = time.Now().Add(SERVE_TIME)
+				stay = true
 			}
+			log.Debugf("From←: %q  command: %q  stay: %v", from, command, stay)
+
+		} else if string(data) != twoway.networkName {
+			// mismatched network name
+			stay = false
+
 		} else {
 			// no connection, so put into serving mode
 			twoway.connections[from] = &connect{
@@ -269,7 +280,15 @@ func (twoway *Bilateral) listenHandler() error {
 				outgoing:  false,
 				tick:      0,
 			}
+			stay = true
+		}
+		if stay {
 			err = sendPacket(twoway.listenSocket, from, "STAY", []byte{})
+		} else {
+			err = sendPacket(twoway.listenSocket, from, "PART", []byte{})
+		}
+		if nil != err {
+			log.Debugf("stay: %v  error: %v", stay, err)
 		}
 
 	case "TICK": // client checking the connection
@@ -305,7 +324,7 @@ func (twoway *Bilateral) listenHandler() error {
 	return err
 }
 
-// handle response from an upstream serever
+// handle response from an upstream server
 func (twoway *Bilateral) replyHandler() error {
 
 	from, command, data, err := receivePacket(twoway.outgoingSocket)
@@ -336,7 +355,7 @@ func (twoway *Bilateral) replyHandler() error {
 			c.backoff = 0
 			c.timestamp = time.Now().Add(LIVE_TIME)
 		} else {
-			log.Infof("stay: %v", c)
+			log.Infof("ignore stay: %v", c)
 		}
 
 	case "TOCK": // keep the connection alive
@@ -597,7 +616,7 @@ func (twoway *Bilateral) rpcClientResponseHandler(item interface{}) error {
 			replyError.Set(reflect.ValueOf(errors.New(errmsg)))
 		}
 
-		log.Debugf("RPC response: %s:%d %s(...) → %v", response.from, id, method, reply.Interface())
+		log.Debugf("RPC response: %s:%d %s(...) → %#v", response.from, id, method, reply.Interface())
 
 		// send the from/result parts of the response
 		request.reply <- result

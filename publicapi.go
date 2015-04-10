@@ -15,6 +15,12 @@ import (
 	"time"
 )
 
+// limits
+const (
+	tickTime       = 50 * time.Millisecond
+	reactorRunTime = 50 * time.Millisecond
+)
+
 // sent to all connections value for Call
 var SendToAll = []string{}
 var SendToOne = []string{}
@@ -33,8 +39,9 @@ type Bilateral struct {
 	server *svrpc.Server
 
 	// this servers identifier
-	encrypted  bool
-	serverName string
+	encrypted   bool
+	serverName  string
+	networkName string
 
 	// map RPC IDs to their channels
 	rpcReturns map[uint32]*rpcClientRequestData
@@ -60,13 +67,22 @@ type Bilateral struct {
 var log *logger.L
 
 // set up the connection (can set plain or encrypted)
-// Nothe that in encrypted mode the public key functions as the server name
+// Note that in encrypted mode the public key functions as the server name
+// and that the netwokName must match on both sides for connection to be established
 //
-// for plaintext call as:  NewBilateral(server_name)
+// for plaintext call as:  NewPlaintext(network_name, server_name)
 //
-// for encrypted call as:  NewBilateral(public_key, private_key)
+// for encrypted call as:  NewEncrypted(network_name, public_key, private_key)
 //      with values from:  pub, priv, err := NewKeypair()
-func NewBilateral(configuration ...string) *Bilateral {
+func NewPlaintext(networkName string, serverName string) *Bilateral {
+	return createBilateral(networkName, serverName)
+}
+
+func NewEncrypted(networkName string, publicKey string, privateKey string) *Bilateral {
+	return createBilateral(networkName, publicKey, privateKey)
+}
+
+func createBilateral(networkName string, configuration ...string) *Bilateral {
 
 	n := len(configuration)
 	if n < 1 || n > 2 {
@@ -79,8 +95,9 @@ func NewBilateral(configuration ...string) *Bilateral {
 
 	twoway := new(Bilateral)
 
-	twoway.serverName = configuration[0]
 	// initialise global data
+	twoway.serverName = configuration[0]
+	twoway.networkName = networkName
 
 	twoway.server = svrpc.NewServer()
 	twoway.connections = make(map[string]*connect)
@@ -154,7 +171,7 @@ func NewBilateral(configuration ...string) *Bilateral {
 		func(item interface{}) error { return twoway.rpcBackHandler(item) })
 
 	// start an event loop
-	reactor.AddChannelTime(time.Tick(time.Second), 1,
+	reactor.AddChannelTime(time.Tick(tickTime), 1,
 		func(i interface{}) error { return twoway.sender() })
 
 	// background RPC test routines
@@ -165,7 +182,7 @@ func NewBilateral(configuration ...string) *Bilateral {
 		twoway.reactorShutdown = make(chan bool)
 		defer close(twoway.reactorShutdown)
 		// log <- "reactor start"
-		err := reactor.Run(time.Second)
+		err := reactor.Run(reactorRunTime)
 		if nil != err {
 			//fmt.Printf("reactor finish: err = %v", err)
 			// log <- fmt.Sprintf(COLOUR_RED+"reactor finish: err = %v"+COLOUR_NORMAL, err)

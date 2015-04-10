@@ -53,6 +53,8 @@ const (
 
 	client2PublicKey  = "6TCclHKH3plwMujU</q=Biy?Fqq!S<5QN@U&KB1A"
 	client2PrivateKey = ">LD=2&7+K$CuLBDBm.mszHhK[unH^DL=Y%K7nXm<"
+
+	networkName = "net one"
 )
 
 func TestCreateNewKeys(t *testing.T) {
@@ -141,7 +143,7 @@ func TestCall(t *testing.T) {
 
 	// create a server
 	serverName := "cleartext server name"
-	server := bilateralrpc.NewBilateral(serverName)
+	server := bilateralrpc.NewPlaintext(networkName, serverName)
 	defer server.Close()
 
 	// use a specific IP:Port so client can use this - (for testing with tcp)
@@ -159,7 +161,7 @@ func TestCall(t *testing.T) {
 
 	// create a client
 	clientName := "a unique client name"
-	client := bilateralrpc.NewBilateral(clientName)
+	client := bilateralrpc.NewPlaintext(networkName, clientName)
 	defer client.Close()
 	client.Register(arith)
 
@@ -197,7 +199,7 @@ func TestOneClientTwoServers(t *testing.T) {
 
 	// create first server
 	server1Name := "cleartext server1 name"
-	server1 := bilateralrpc.NewBilateral(server1Name)
+	server1 := bilateralrpc.NewPlaintext(networkName, server1Name)
 	defer server1.Close()
 
 	// use a specific IP:Port so client can use this - (for testing with tcp)
@@ -211,7 +213,7 @@ func TestOneClientTwoServers(t *testing.T) {
 
 	// create second server
 	server2Name := "cleartext server2 name"
-	server2 := bilateralrpc.NewBilateral(server2Name)
+	server2 := bilateralrpc.NewPlaintext(networkName, server2Name)
 	defer server2.Close()
 
 	// use a specific IP:Port so client can use this - (for testing with tcp)
@@ -230,7 +232,7 @@ func TestOneClientTwoServers(t *testing.T) {
 
 	// create a client
 	clientName := "a unique client name"
-	client := bilateralrpc.NewBilateral(clientName)
+	client := bilateralrpc.NewPlaintext(networkName, clientName)
 	defer client.Close()
 	client.Register(arith)
 
@@ -278,7 +280,7 @@ func TestOneClientTwoServers(t *testing.T) {
 func TestEncryptedCall(t *testing.T) {
 
 	// create a server
-	server1 := bilateralrpc.NewBilateral(server1PublicKey, server1PrivateKey)
+	server1 := bilateralrpc.NewEncrypted(networkName, server1PublicKey, server1PrivateKey)
 	defer server1.Close()
 
 	// use a specific IP:Port so client can use this - (for testing with tcp)
@@ -295,7 +297,7 @@ func TestEncryptedCall(t *testing.T) {
 	server1.Register(arith)
 
 	// create a client
-	client1 := bilateralrpc.NewBilateral(client1PublicKey, client1PrivateKey)
+	client1 := bilateralrpc.NewEncrypted(networkName, client1PublicKey, client1PrivateKey)
 	defer client1.Close()
 	client1.Register(arith)
 
@@ -332,7 +334,7 @@ func TestEncryptedCall(t *testing.T) {
 func TestEncryptedOneClientTwoServers(t *testing.T) {
 
 	// create first server
-	server1 := bilateralrpc.NewBilateral(server1PublicKey, server1PrivateKey)
+	server1 := bilateralrpc.NewEncrypted(networkName, server1PublicKey, server1PrivateKey)
 	defer server1.Close()
 
 	// use a specific IP:Port so client can use this - (for testing with tcp)
@@ -345,7 +347,7 @@ func TestEncryptedOneClientTwoServers(t *testing.T) {
 	}
 
 	// create second server
-	server2 := bilateralrpc.NewBilateral(server2PublicKey, server2PrivateKey)
+	server2 := bilateralrpc.NewEncrypted(networkName, server2PublicKey, server2PrivateKey)
 	defer server2.Close()
 
 	// use a specific IP:Port so client can use this - (for testing with tcp)
@@ -363,7 +365,7 @@ func TestEncryptedOneClientTwoServers(t *testing.T) {
 	server2.Register(arith)
 
 	// create a client
-	client1 := bilateralrpc.NewBilateral(client1PublicKey, client1PrivateKey)
+	client1 := bilateralrpc.NewEncrypted(networkName, client1PublicKey, client1PrivateKey)
 	defer client1.Close()
 
 	if err := client1.ConnectTo(server2PublicKey, server2Address); nil != err {
@@ -411,7 +413,7 @@ func TestEncryptedOneClientTwoServers(t *testing.T) {
 func TestEncryptedTwoClientaOneServers(t *testing.T) {
 
 	// create first server
-	server1 := bilateralrpc.NewBilateral(server1PublicKey, server1PrivateKey)
+	server1 := bilateralrpc.NewEncrypted(networkName, server1PublicKey, server1PrivateKey)
 	defer server1.Close()
 
 	// use a specific IP:Port so client can use this - (for testing with tcp)
@@ -428,7 +430,7 @@ func TestEncryptedTwoClientaOneServers(t *testing.T) {
 	server1.Register(arith)
 
 	// create first client
-	client1 := bilateralrpc.NewBilateral(client1PublicKey, client1PrivateKey)
+	client1 := bilateralrpc.NewEncrypted(networkName, client1PublicKey, client1PrivateKey)
 	defer client1.Close()
 
 	if err := client1.ConnectTo(server1PublicKey, server1Address); nil != err {
@@ -436,7 +438,7 @@ func TestEncryptedTwoClientaOneServers(t *testing.T) {
 	}
 
 	// create second client
-	client2 := bilateralrpc.NewBilateral(client2PublicKey, client2PrivateKey)
+	client2 := bilateralrpc.NewEncrypted(networkName, client2PublicKey, client2PrivateKey)
 	defer client2.Close()
 
 	if err := client2.ConnectTo(server1PublicKey, server1Address); nil != err {
