@@ -303,9 +303,10 @@ func (twoway *Bilateral) ActiveConnections() []string {
 	return active
 }
 
-// actual rpc call routine
+// rpc call routine and receive reply, waiting if necessary
 // to can be set to SendToAll to do a broadcast
 func (twoway *Bilateral) Call(to []string, method string, args interface{}, results interface{}, wait time.Duration) error {
+
 	if nil != to && 0 == len(to) {
 		to = nil
 	}
@@ -352,6 +353,8 @@ func (twoway *Bilateral) Call(to []string, method string, args interface{}, resu
 	}
 
 	done := make(chan *rpcClientRequestData)
+
+	log.Infof("send for method: %s", method)
 	twoway.rpcClientRequestChannel <- &rpcClientRequestData{
 		id:         id,
 		to:         to,
@@ -364,14 +367,51 @@ func (twoway *Bilateral) Call(to []string, method string, args interface{}, resu
 		count:      0,   // added later
 	}
 
+	log.Infof("wait for result for method: %s", method)
 	// the processed request will be returned here
 	request := <-done
+	log.Infof("result for method: %s : %v", method, request)
+
+	if nil == request.reply {
+		return errors.New("no results")
+	}
 
 	received := reflect.MakeSlice(theSlice, 0, len(to))
 	for r := range request.reply {
 		received = reflect.Append(received, r.Elem())
 	}
 	reflect.ValueOf(results).Elem().Set(received)
+	log.Infof("final for method: %s : %v", method, results)
+
+	return nil
+}
+
+// rpc cast routine - no reply will be sent by remote
+// to can be set to SendToAll to do a broadcast
+func (twoway *Bilateral) Cast(to []string, method string, args interface{}) error {
+
+	if nil != to && 0 == len(to) {
+		to = nil
+	}
+
+	select {
+	case <-twoway.shutdownAll:
+		return errors.New("RPC system shutting down")
+	default:
+	}
+
+	id := nonce()
+	twoway.rpcClientRequestChannel <- &rpcClientRequestData{
+		id:         id,
+		to:         to,
+		wait:       CALL_TIMEOUT,
+		method:     method,
+		args:       args,
+		structType: nil,
+		done:       nil,
+		reply:      nil, // added later
+		count:      0,   // added later
+	}
 
 	return nil
 }

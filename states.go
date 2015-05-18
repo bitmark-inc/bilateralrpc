@@ -66,9 +66,10 @@ type connect struct {
 
 // incoming RPC request to server procedure
 type rpcServerCallData struct {
-	socket  *zmq.Socket
-	from    string
-	request []byte
+	socket    *zmq.Socket
+	from      string
+	request   []byte
+	wantReply bool
 }
 
 // server response to incoming RPC request
@@ -303,9 +304,22 @@ func (twoway *Bilateral) listenHandler() error {
 			c.timestamp = time.Now().Add(SERVE_TIME)
 			c.backoff = 0
 			twoway.rpcServerCallChannel <- rpcServerCallData{
-				socket:  twoway.listenSocket,
-				from:    from,
-				request: data,
+				socket:    twoway.listenSocket,
+				from:      from,
+				request:   data,
+				wantReply: true,
+			}
+		}
+
+	case "CAST": // client submits a request for us to process
+		if c, ok := twoway.connections[from]; ok && stateServing == c.state {
+			c.timestamp = time.Now().Add(SERVE_TIME)
+			c.backoff = 0
+			twoway.rpcServerCallChannel <- rpcServerCallData{
+				socket:    twoway.listenSocket,
+				from:      from,
+				request:   data,
+				wantReply: false,
 			}
 		}
 
@@ -371,9 +385,23 @@ func (twoway *Bilateral) replyHandler() error {
 			c.backoff = 0
 			c.timestamp = time.Now().Add(LIVE_TIME)
 			twoway.rpcServerCallChannel <- rpcServerCallData{
-				socket:  twoway.outgoingSocket,
-				from:    from,
-				request: data,
+				socket:    twoway.outgoingSocket,
+				from:      from,
+				request:   data,
+				wantReply: true,
+			}
+		}
+
+	case "CAST": // server's "client" submits a request
+		if c, ok := twoway.connections[from]; ok && (stateConnected == c.state || stateCheck == c.state) {
+			c.state = stateConnected
+			c.backoff = 0
+			c.timestamp = time.Now().Add(LIVE_TIME)
+			twoway.rpcServerCallChannel <- rpcServerCallData{
+				socket:    twoway.outgoingSocket,
+				from:      from,
+				request:   data,
+				wantReply: false,
 			}
 		}
 
@@ -417,46 +445,51 @@ loop:
 		case request := <-twoway.rpcServerCallChannel:
 			// received a request for process
 
-			buffer := bytes.NewBuffer(request.request)
-			dec := gob.NewDecoder(buffer)
+			go func() {
+				buffer := bytes.NewBuffer(request.request)
+				dec := gob.NewDecoder(buffer)
 
-			var id uint32
-			err := dec.Decode(&id)
-			if nil != err {
-				log.Infof("id decode err = %v", err)
-			}
+				var id uint32
+				err := dec.Decode(&id)
+				if nil != err {
+					log.Infof("id decode err = %v", err)
+				}
 
-			var method string
-			err = dec.Decode(&method)
-			if nil != err {
-				log.Infof("method decode err = %v", err)
-			}
+				var method string
+				err = dec.Decode(&method)
+				if nil != err {
+					log.Infof("method decode err = %v", err)
+				}
 
-			log.Infof("RPC %s request: %d %s", request.from, id, method)
+				log.Infof("RPC %s request: %d %s", request.from, id, method)
 
-			responseBuffer := new(bytes.Buffer)
-			enc := gob.NewEncoder(responseBuffer)
+				responseBuffer := new(bytes.Buffer)
+				enc := gob.NewEncoder(responseBuffer)
 
-			err = enc.Encode(id)
-			if err != nil {
-				log.Infof("id encode err = %v", err)
-			}
+				err = enc.Encode(id)
+				if err != nil {
+					log.Infof("id encode err = %v", err)
+				}
 
-			err = enc.Encode(method)
-			if err != nil {
-				log.Infof("method encode err = %v", err)
-			}
+				err = enc.Encode(method)
+				if err != nil {
+					log.Infof("method encode err = %v", err)
+				}
 
-			err = twoway.server.Call(method, buffer, responseBuffer)
-			if err != nil {
-				log.Infof("reply error encode err = %v", err)
-			}
+				err = twoway.server.Call(method, buffer, responseBuffer)
+				if err != nil {
+					log.Infof("reply error encode err = %v", err)
+				}
 
-			twoway.rpcServerBackChannel <- rpcServerBackData{
-				socket:   request.socket,
-				to:       request.from,
-				response: responseBuffer.Bytes(),
-			}
+				if request.wantReply {
+					twoway.rpcServerBackChannel <- rpcServerBackData{
+						socket:   request.socket,
+						to:       request.from,
+						response: responseBuffer.Bytes(),
+					}
+				}
+			}()
+
 		case <-twoway.shutdownAll:
 			break loop
 		}
@@ -470,7 +503,14 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 	if !ok {
 		return nil // throw away invalid items
 	}
-	twoway.rpcReturns[request.id] = request
+
+	// determine if CALL(return value expected) or CAST(no return value possible)
+	opCallOrCast := "CALL"
+	if nil == request.done {
+		opCallOrCast = "CAST"
+	} else {
+		twoway.rpcReturns[request.id] = request
+	}
 
 	buffer := bytes.Buffer{}
 	enc := gob.NewEncoder(&buffer)
@@ -497,12 +537,12 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 		for to, c := range twoway.connections {
 			switch c.state {
 			case stateConnected, stateCheck:
-				log.Debugf("RPC →%s (%x)", to, packet)
-				sendPacket(twoway.outgoingSocket, to, "CALL", packet)
+				log.Debugf("RPC/%s →%s (%x)", opCallOrCast, to, packet)
+				sendPacket(twoway.outgoingSocket, to, opCallOrCast, packet)
 				request.count += 1
 			case stateServing:
-				log.Debugf("RPC %s← (%x)", to, packet)
-				sendPacket(twoway.listenSocket, to, "CALL", packet)
+				log.Debugf("RPC/%s %s← (%x)", opCallOrCast, to, packet)
+				sendPacket(twoway.listenSocket, to, opCallOrCast, packet)
 				request.count += 1
 			default:
 			}
@@ -515,28 +555,27 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 			}
 			switch c.state {
 			case stateConnected, stateCheck:
-				log.Debugf("RPC →%s (%x)", to, packet)
-				sendPacket(twoway.outgoingSocket, to, "CALL", packet)
+				log.Debugf("RPC/%s →%s (%x)", opCallOrCast, to, packet)
+				sendPacket(twoway.outgoingSocket, to, opCallOrCast, packet)
 				request.count += 1
 			case stateServing:
-				log.Debugf("RPC %s← (%x)", to, packet)
-				sendPacket(twoway.listenSocket, to, "CALL", packet)
+				log.Debugf("RPC/%s %s← (%x)", opCallOrCast, to, packet)
+				sendPacket(twoway.listenSocket, to, opCallOrCast, packet)
 				request.count += 1
 			default:
 			}
 		}
 	}
 
-	log.Debugf("make chan %d", request.count)
-
-	request.reply = make(chan reflect.Value, request.count)
-
 	// nothing sent so nothing expected, just finish the request
-	if 0 == request.count {
-		log.Infof("nothing was sent: count = %d", request.count)
+	if 0 == request.count || nil == request.done {
+		log.Infof("nothing was sent / no reply expected: count = %d", request.count)
 		twoway.finishRequest(request)
 		return nil
 	}
+
+	log.Debugf("make chan %d", request.count)
+	request.reply = make(chan reflect.Value, request.count)
 
 	// queue for processing
 	twoway.insertEvent(request.id, request.wait)
@@ -547,9 +586,14 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 // finish the request and remove it from the map
 // allowing the Call to return any accumulated results
 func (twoway *Bilateral) finishRequest(request *rpcClientRequestData) {
-	close(request.reply)
-	request.done <- request
-	close(request.done)
+	log.Infof("finish: %v", request)
+	if nil != request.reply {
+		close(request.reply)
+	}
+	if nil != request.done {
+		request.done <- request
+		close(request.done)
+	}
 	delete(twoway.rpcReturns, request.id)
 }
 

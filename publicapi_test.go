@@ -40,6 +40,27 @@ func (t *Arith) SumDiff(args *Args, reply *Reply) error {
 
 // ------------------------------------------------------------
 
+// sample server object for cast
+type LastItem struct {
+	Value int
+}
+
+// parameters
+type SetArgs struct {
+	Value int
+}
+
+// null result
+type NullReply struct{}
+
+// example
+func (last *LastItem) Set(args *SetArgs, reply *NullReply) error {
+	last.Value = args.Value
+	return nil // error will be ignored for cast
+}
+
+// ------------------------------------------------------------
+
 // these were created by setting "show = true" below
 const (
 	server1PublicKey  = "J{SzFvCqHqs=zwW@eBZ5bu1F^dMydeacxYHJB*7m"
@@ -192,6 +213,74 @@ func TestCall(t *testing.T) {
 		t.Fatalf("reverse Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{clientName})
+}
+
+// basic send-only testing
+func TestCast(t *testing.T) {
+
+	// create a server
+	serverName := "cleartext server name"
+	server := bilateralrpc.NewPlaintext(networkName, serverName)
+	defer server.Close()
+
+	// use a specific IP:Port so client can use this - (for testing with tcp)
+	serverAddress := "tcp://127.0.0.1:9979"
+	//serverAddress := "inproc://test_bilateral_calling"
+
+	// listen on a port
+	if err := server.ListenOn(serverAddress); nil != err {
+		t.Fatalf("ConnectTo: err = %v", err)
+	}
+
+	// register server objects
+	last := new(LastItem)
+	server.Register(last)
+
+	// create a client
+	clientName := "a unique client name"
+	client := bilateralrpc.NewPlaintext(networkName, clientName)
+	defer client.Close()
+	client.Register(last)
+
+	if err := client.ConnectTo(serverName, serverAddress); nil != err {
+		t.Fatalf("ConnectTo: err = %v", err)
+	}
+
+	// allow time to connect - since handshake must occur in the background
+	waitConnect(t, client, 1)
+
+	expected := 765
+	// some data to send
+	args := SetArgs{
+		Value: expected,
+	}
+
+	// ensure initailly zero
+	if 0 != last.Value {
+		t.Fatal("last.Valie is not initially zero")
+	}
+
+	// empty string will result in calls to all active connections
+	if err := client.Cast([]string{}, "LastItem.Set", args); nil != err {
+		t.Fatalf("Cast: err = %v", err)
+	}
+
+	// poll the server opbect for up to 5 seconds to see if cast arrived
+	matches := false
+	startTime := time.Now()
+	for i := 0; i < 500; i += 1 {
+		time.Sleep(10 * time.Millisecond)
+		if last.Value == expected {
+			matches = true
+			break
+		}
+	}
+
+	if matches {
+		t.Logf("Value set after %5.3f s", time.Since(startTime).Seconds())
+	} else {
+		t.Fatalf("timeout on Cast: Value: %d  expected: %d", last.Value, expected)
+	}
 }
 
 // one client two servers
