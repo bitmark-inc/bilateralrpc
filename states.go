@@ -17,25 +17,25 @@ import (
 
 const (
 	// state machine timeouts
-	FIRST_START_TIME = 2 * time.Second        // from program start to first connect request
-	FIRST_JOIN_TIME  = 3 * time.Second        // time to send first join after connect
-	JOIN_TIME        = 5 * time.Second        // time between join requestss
-	LIVE_TIME        = 10 * time.Second       // time to send ping
-	RETRY_TIME       = 10 * time.Second       // starting retry time
+	FIRST_START_TIME = 5 * time.Second        // from program start to first connect request
+	FIRST_JOIN_TIME  = 5 * time.Second        // time to send first join after connect
+	JOIN_TIME        = 10 * time.Second       // time between join requestss
+	LIVE_TIME        = 30 * time.Second       // time to send ping
+	RETRY_TIME       = 60 * time.Second       // starting retry time
 	SERVE_TIME       = LIVE_TIME + RETRY_TIME // timeout for server side
 	BASE_PART_TIME   = 5 * time.Second        // delay before retry on a PART
 	RAND_PART_TIME   = 20 * time.Millisecond  // multipled by a random byte (0..255)
 
 	// state machine counts
 	MAXIMUM_BACKOFF = 12 // backoff counter for retries
-	MAXIMUM_JOINS   = 5  // number of joins before disconnect then retry
+	MAXIMUM_JOINS   = 10 // number of joins before disconnect then retry
 
 	// ØMQ settings
 	LINGER_TIME  = 50 * time.Millisecond
 	SEND_TIMEOUT = 0
 
 	// default timeout for Call()
-	CALL_TIMEOUT = 5 * time.Second // only used if zero is passed
+	CALL_TIMEOUT = 15 * time.Second // only used if zero is passed
 )
 
 //
