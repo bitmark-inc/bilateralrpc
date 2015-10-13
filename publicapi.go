@@ -12,6 +12,7 @@ import (
 	"github.com/bitmark-inc/logger"
 	zmq "github.com/pebbe/zmq4"
 	"reflect"
+	"syscall"
 	"time"
 )
 
@@ -181,12 +182,19 @@ func createBilateral(networkName string, configuration ...string) *Bilateral {
 	go func() {
 		twoway.reactorShutdown = make(chan bool)
 		defer close(twoway.reactorShutdown)
-		// log <- "reactor start"
-		err := reactor.Run(reactorRunTime)
-		if nil != err {
-			//fmt.Printf("reactor finish: err = %v", err)
-			// log <- fmt.Sprintf(COLOUR_RED+"reactor finish: err = %v"+COLOUR_NORMAL, err)
+		log.Info("reactor start")
+		for {
+			// note: re-run reactor if its internal poll fails with "interrupted system call"
+			err := reactor.Run(reactorRunTime)
+			if nil == err {
+				break // normal termination
+			} else if  zmq.Errno(syscall.EINTR) != zmq.AsErrno(err) {
+				log.Errorf("reactor failed: err = %v", err)
+				break
+			}
+			log.Errorf("reactor retry: err = %v", err)
 		}
+		log.Info("reactor stopped")
 	}()
 
 	return twoway
