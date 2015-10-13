@@ -19,7 +19,7 @@ const (
 	// state machine timeouts
 	FIRST_START_TIME = 5 * time.Second        // from program start to first connect request
 	FIRST_JOIN_TIME  = 5 * time.Second        // time to send first join after connect
-	JOIN_TIME        = 10 * time.Second       // time between join requestss
+	JOIN_TIME        = 10 * time.Second       // time between join requests
 	LIVE_TIME        = 30 * time.Second       // time to send ping
 	RETRY_TIME       = 60 * time.Second       // starting retry time
 	SERVE_TIME       = LIVE_TIME + RETRY_TIME // timeout for server side
@@ -27,7 +27,7 @@ const (
 	RAND_PART_TIME   = 20 * time.Millisecond  // multipled by a random byte (0..255)
 
 	// state machine counts
-	MAXIMUM_BACKOFF = 12 // backoff counter for retries
+	MAXIMUM_BACKOFF = 7  // backoff counter for retries
 	MAXIMUM_JOINS   = 10 // number of joins before disconnect then retry
 
 	// ØMQ settings
@@ -147,7 +147,7 @@ loop:
 			log.Infof("make disconnect: %s (%s)", c.address, to)
 			err = twoway.outgoingSocket.Disconnect(c.address)
 			if nil != err {
-				log.Infof("disconnect(MakeServer) err = %v", err)
+				log.Errorf("disconnect(MakeServer) err = %v", err)
 			}
 			//c.timestamp = time.Now().Add(FIRST_JOIN_TIME)
 			c.timestamp = time.Now().Add(SERVE_TIME)
@@ -157,7 +157,7 @@ loop:
 			log.Infof("destroy disconnect: %s (%s)", c.address, to)
 			twoway.outgoingSocket.Disconnect(c.address)
 			if nil != err {
-				log.Infof("disconnect(Destroy) err = %v", err)
+				log.Errorf("disconnect(Destroy) err = %v", err)
 			}
 			c.state = stateStopped
 			delete(twoway.connections, to)
@@ -175,7 +175,7 @@ loop:
 			log.Infof("waiting connect: %s @ %s", to, c.address)
 			err := twoway.outgoingSocket.Connect(c.address)
 			if nil != err {
-				log.Infof("connect err = %v", err)
+				log.Errorf("connect err = %v", err)
 				c.state = stateStopped
 			} else {
 				c.state = stateHandshake
@@ -193,7 +193,7 @@ loop:
 				log.Infof("handshake disconnect: %s (%s)", c.address, to)
 				twoway.outgoingSocket.Disconnect(c.address)
 				if nil != err {
-					log.Infof("disconnect(Handshake) err = %v", err)
+					log.Errorf("disconnect(Handshake) err = %v", err)
 				}
 				c.state = stateWaiting
 				c.timestamp = time.Now().Add(RETRY_TIME << c.backoff)
@@ -217,7 +217,7 @@ loop:
 			log.Infof("check disconnect: %s (%s)", c.address, to)
 			err := twoway.outgoingSocket.Disconnect(c.address)
 			if nil != err {
-				log.Infof("disconnect(Check) err = %v", err)
+				log.Errorf("disconnect(Check) err = %v", err)
 			}
 			c.state = stateWaiting
 			c.timestamp = time.Now().Add(RETRY_TIME << c.backoff)
@@ -235,14 +235,14 @@ func (twoway *Bilateral) listenHandler() error {
 
 	from, command, data, err := receivePacket(twoway.listenSocket)
 	if nil != err {
-		log.Infof("listen: from: %s: err = %v", from, err)
+		log.Errorf("listen: from: %s: err = %v", from, err)
 		return err
 	}
 	// prevent loopback
 	if twoway.serverName == from {
 		err := twoway.listenSocket.Disconnect(from)
 		if nil != err {
-			log.Infof("disconnect(loop) err = %v", err)
+			log.Errorf("disconnect(loop) err = %v", err)
 		}
 		twoway.connections[from].state = stateDestroy
 		return nil
@@ -289,14 +289,18 @@ func (twoway *Bilateral) listenHandler() error {
 			err = sendPacket(twoway.listenSocket, from, "PART", []byte{})
 		}
 		if nil != err {
-			log.Debugf("stay: %v  error: %v", stay, err)
+			log.Errorf("stay: %v  error: %v", stay, err)
 		}
 
 	case "TICK": // client checking the connection
 		if c, ok := twoway.connections[from]; ok && stateServing == c.state {
 			c.timestamp = time.Now().Add(SERVE_TIME)
 			c.backoff = 0
+			log.Infof("tock %x → %s", data, from)
 			err = sendPacket(twoway.listenSocket, from, "TOCK", data)
+			if nil != err {
+				log.Errorf("tick: %v  error: %v", data, err)
+			}
 		}
 
 	case "CALL": // client submits a request for us to process
@@ -335,6 +339,9 @@ func (twoway *Bilateral) listenHandler() error {
 	default: // ignore others
 	}
 
+	if nil != err {
+		log.Errorf("listenHandler err = %v", err)
+	}
 	return err
 }
 
@@ -343,7 +350,7 @@ func (twoway *Bilateral) replyHandler() error {
 
 	from, command, data, err := receivePacket(twoway.outgoingSocket)
 	if nil != err {
-		log.Infof("reply: from: %s: err = %v", from, err)
+		log.Errorf("reply: from: %s: err = %v", from, err)
 		return err
 	}
 
@@ -353,7 +360,7 @@ func (twoway *Bilateral) replyHandler() error {
 	case "PART": // server will disconnect this connection
 		err := twoway.outgoingSocket.Disconnect(from)
 		if nil != err {
-			log.Infof("disconnect(PART) err = %v", err)
+			log.Errorf("disconnect(PART) err = %v", err)
 		}
 		if c, ok := twoway.connections[from]; ok {
 			log.Infof("reply:part state = %d", c.state)
@@ -418,6 +425,9 @@ func (twoway *Bilateral) replyHandler() error {
 	default: // ignore others
 	}
 
+	if nil != err {
+		log.Errorf("replyHandler err = %v", err)
+	}
 	return err
 }
 
@@ -452,13 +462,13 @@ loop:
 				var id uint32
 				err := dec.Decode(&id)
 				if nil != err {
-					log.Infof("id decode err = %v", err)
+					log.Errorf("id decode err = %v", err)
 				}
 
 				var method string
 				err = dec.Decode(&method)
 				if nil != err {
-					log.Infof("method decode err = %v", err)
+					log.Errorf("method decode err = %v", err)
 				}
 
 				log.Infof("RPC %s request: %d %s", request.from, id, method)
@@ -468,17 +478,17 @@ loop:
 
 				err = enc.Encode(id)
 				if err != nil {
-					log.Infof("id encode err = %v", err)
+					log.Errorf("id encode err = %v", err)
 				}
 
 				err = enc.Encode(method)
 				if err != nil {
-					log.Infof("method encode err = %v", err)
+					log.Errorf("method encode err = %v", err)
 				}
 
 				err = twoway.server.Call(method, buffer, responseBuffer)
 				if err != nil {
-					log.Infof("reply error encode err = %v", err)
+					log.Errorf("reply error encode err = %v", err)
 				}
 
 				if request.wantReply {
@@ -517,17 +527,17 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 
 	err := enc.Encode(request.id)
 	if err != nil {
-		log.Infof("id encode err = %v", err)
+		log.Errorf("id encode err = %v", err)
 	}
 
 	err = enc.Encode(request.method)
 	if err != nil {
-		log.Infof("method encode err = %v", err)
+		log.Errorf("method encode err = %v", err)
 	}
 
 	err = enc.Encode(request.args)
 	if err != nil {
-		log.Infof("args encode err = %v", err)
+		log.Errorf("args encode err = %v", err)
 	}
 
 	packet := buffer.Bytes()
@@ -586,7 +596,7 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 // finish the request and remove it from the map
 // allowing the Call to return any accumulated results
 func (twoway *Bilateral) finishRequest(request *rpcClientRequestData) {
-	log.Infof("finish: %v", request)
+	log.Debugf("finish: %v", request)
 	if nil != request.reply {
 		close(request.reply)
 	}
@@ -618,19 +628,19 @@ func (twoway *Bilateral) rpcClientResponseHandler(item interface{}) error {
 		var id uint32
 		err := dec.Decode(&id)
 		if nil != err {
-			log.Infof("id decode err = %v", err)
+			log.Errorf("id decode err = %v", err)
 		}
 
 		var method string
 		err = dec.Decode(&method)
 		if nil != err {
-			log.Infof("method decode err = %v", err)
+			log.Errorf("method decode err = %v", err)
 		}
 
 		var errmsg string
 		err = dec.Decode(&errmsg)
 		if nil != err {
-			log.Infof("errmsg decode err = %v", err)
+			log.Errorf("errmsg decode err = %v", err)
 		}
 
 		// get matching request or throw away invalid/expired requests
@@ -654,7 +664,7 @@ func (twoway *Bilateral) rpcClientResponseHandler(item interface{}) error {
 		if "" == errmsg {
 			err = dec.Decode(reply.Addr().Interface())
 			if nil != err {
-				log.Infof("…reply decode err = %v", err)
+				log.Errorf("…reply decode err = %v", err)
 			}
 		} else {
 			replyError.Set(reflect.ValueOf(errors.New(errmsg)))

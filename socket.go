@@ -44,7 +44,9 @@ func createSocket(st socketType, publicKey string, privateKey string) (*zmq.Sock
 	//socket.SetIpv6(true)  // ***** FIX THIS find fix for FreeBSD libzmq4 ****
 	socket.SetSndtimeo(SEND_TIMEOUT)
 	socket.SetLinger(LINGER_TIME)
-	socket.SetRouterMandatory(0) // discard unroutable packets
+	socket.SetRouterMandatory(0)   // discard unroutable packets
+	socket.SetRouterHandover(true) // allow quick reconnect for a given public key
+	socket.SetImmediate(false) // queue messages sent to disconnected peer
 
 	// servers identity
 	socket.SetIdentity(publicKey) // just use public key for identity
@@ -52,7 +54,10 @@ func createSocket(st socketType, publicKey string, privateKey string) (*zmq.Sock
 	switch st {
 	case serverSocket:
 		// domain is servers public key
-		socket.ServerAuthCurve(publicKey, privateKey)
+		socket.SetCurveServer(1)
+		socket.SetCurvePublickey(publicKey)
+		socket.SetCurveSecretkey(privateKey)
+		socket.SetZapDomain(publicKey)
 
 		// ***** FIX THIS ****
 		// this allows any client to connect
