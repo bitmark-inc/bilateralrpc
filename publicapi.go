@@ -188,7 +188,7 @@ func createBilateral(networkName string, configuration ...string) *Bilateral {
 			err := reactor.Run(reactorRunTime)
 			if nil == err {
 				break // normal termination
-			} else if  zmq.Errno(syscall.EINTR) != zmq.AsErrno(err) {
+			} else if zmq.Errno(syscall.EINTR) != zmq.AsErrno(err) {
 				log.Errorf("reactor failed: err = %v", err)
 				break
 			}

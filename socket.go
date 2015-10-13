@@ -46,7 +46,7 @@ func createSocket(st socketType, publicKey string, privateKey string) (*zmq.Sock
 	socket.SetLinger(LINGER_TIME)
 	socket.SetRouterMandatory(0)   // discard unroutable packets
 	socket.SetRouterHandover(true) // allow quick reconnect for a given public key
-	socket.SetImmediate(false) // queue messages sent to disconnected peer
+	socket.SetImmediate(false)     // queue messages sent to disconnected peer
 
 	// servers identity
 	socket.SetIdentity(publicKey) // just use public key for identity
