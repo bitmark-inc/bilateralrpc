@@ -389,7 +389,8 @@ func (twoway *Bilateral) Call(to []string, method string, args interface{}, resu
 		received = reflect.Append(received, r.Elem())
 	}
 	reflect.ValueOf(results).Elem().Set(received)
-	log.Infof("final for method: %s : %v", method, results)
+	log.Infof("final for method: %s", method)
+	log.Tracef("final results: %x", results)
 
 	return nil
 }
