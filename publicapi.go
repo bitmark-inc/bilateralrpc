@@ -24,7 +24,6 @@ const (
 
 // sent to all connections value for Call
 var SendToAll = []string{}
-var SendToOne = []string{}
 
 // type to hold the client/server data
 type Bilateral struct {

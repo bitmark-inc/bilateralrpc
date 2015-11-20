@@ -91,6 +91,15 @@ import (
 // because Typeof takes an empty interface value.  This is annoying.
 var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
 
+// magick fields:
+//
+//  fields that if present in the Args paramter structure which if the
+//  match the right type will be overridden by internal data values.
+//  Must be prefixed by "Bilareral_" to make them clear.
+const (
+	mf_BlSender = "Bilateral_SENDER" // string
+)
+
 type methodType struct {
 	// sync.Mutex // protects counters
 	method    reflect.Method
@@ -329,7 +338,7 @@ func (s *service) call(server *Server, mtype *methodType, argv, replyv reflect.V
 }
 
 // execute a server side call
-func (server *Server) Call(ServiceMethod string, in *bytes.Buffer, out *bytes.Buffer) (err error) {
+func (server *Server) Call(ServiceMethod string, in *bytes.Buffer, out *bytes.Buffer, sender string) (err error) {
 	dot := strings.LastIndex(ServiceMethod, ".")
 	if dot < 0 {
 		err = errors.New("rpc: service/method request ill-formed: " + ServiceMethod)
@@ -353,21 +362,32 @@ func (server *Server) Call(ServiceMethod string, in *bytes.Buffer, out *bytes.Bu
 	}
 
 	// Decode the argument value.
-	argIsValue := false // if true, need to indirect before calling.
+	argIsValue := false // if true, call requires value arg
 	var argv reflect.Value
 	if mtype.ArgType.Kind() == reflect.Ptr {
 		argv = reflect.New(mtype.ArgType.Elem())
 	} else {
 		argv = reflect.New(mtype.ArgType)
-		argIsValue = true
+		argIsValue = true // record need to dereference later
 	}
 	// argv guaranteed to be a pointer now.
 	codec := gob.NewDecoder(in)
 	if err = codec.Decode(argv.Interface()); err != nil {
 		return
 	}
+	argvDeRef := argv.Elem() // to access the fields of the struct
+
+	// check for magick fields and override their values
+	// prior to the procedure call
+	blSender := argvDeRef.FieldByName(mf_BlSender)
+	if reflect.String == blSender.Kind() {
+		blSender.SetString(sender)
+	}
+
+	// call needs value not pointer, so dereference
+	// i.e. calling : func M(A_t args, *R_t result)
 	if argIsValue {
-		argv = argv.Elem()
+		argv = argvDeRef
 	}
 
 	// result type
