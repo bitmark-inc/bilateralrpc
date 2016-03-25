@@ -20,6 +20,9 @@ import (
 const (
 	tickTime       = 50 * time.Millisecond
 	reactorRunTime = 50 * time.Millisecond
+
+	channelRequests = 4  // number of channel requests to handle each cycle (0 =>all)
+	channelBuffers  = 10 // size of RPC channel buffers
 )
 
 // sent to all connections value for Call
@@ -107,10 +110,10 @@ func createBilateral(networkName string, configuration ...string) *Bilateral {
 	twoway.shutdownAll = make(chan bool)
 
 	// RPC buffered streams
-	twoway.rpcClientRequestChannel = make(chan interface{}, 20)
-	twoway.rpcClientResponseChannel = make(chan interface{}, 20)
-	twoway.rpcServerCallChannel = make(chan rpcServerCallData, 20)
-	twoway.rpcServerBackChannel = make(chan interface{}, 20)
+	twoway.rpcClientRequestChannel = make(chan interface{}, channelBuffers)
+	twoway.rpcClientResponseChannel = make(chan interface{}, channelBuffers)
+	twoway.rpcServerCallChannel = make(chan rpcServerCallData, channelBuffers)
+	twoway.rpcServerBackChannel = make(chan interface{}, channelBuffers)
 
 	log.Infof("server name: %q", twoway.serverName)
 
@@ -161,13 +164,13 @@ func createBilateral(networkName string, configuration ...string) *Bilateral {
 	reactor.AddSocket(twoway.outgoingSocket, zmq.POLLIN,
 		func(e zmq.State) error { return twoway.replyHandler() })
 
-	reactor.AddChannel(twoway.rpcClientRequestChannel, 5,
+	reactor.AddChannel(twoway.rpcClientRequestChannel, channelRequests,
 		func(item interface{}) error { return twoway.rpcClientRequestHandler(item) })
 
-	reactor.AddChannel(twoway.rpcClientResponseChannel, 5,
+	reactor.AddChannel(twoway.rpcClientResponseChannel, channelRequests,
 		func(item interface{}) error { return twoway.rpcClientResponseHandler(item) })
 
-	reactor.AddChannel(twoway.rpcServerBackChannel, 5,
+	reactor.AddChannel(twoway.rpcServerBackChannel, channelRequests,
 		func(item interface{}) error { return twoway.rpcBackHandler(item) })
 
 	// start an event loop
