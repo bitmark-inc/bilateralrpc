@@ -510,6 +510,7 @@ loop:
 // if an rpc comes in send to some/all servers
 func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 	request, ok := item.(*rpcClientRequestData)
+	log.Infof("item: %v  ok: %v", item, ok)
 	if !ok {
 		return nil // throw away invalid items
 	}
