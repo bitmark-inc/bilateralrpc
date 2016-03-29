@@ -11,13 +11,21 @@ import (
 // send a packet
 func sendPacket(socket *zmq.Socket, to string, command string, data []byte) error {
 
-	if _, err := socket.Send(to, zmq.SNDMORE|zmq.DONTWAIT); nil != err {
+	m1, err := socket.Send(to, zmq.SNDMORE|zmq.DONTWAIT)
+	if nil != err {
 		return err
 	}
-	if _, err := socket.Send(command, zmq.SNDMORE|zmq.DONTWAIT); nil != err {
+	m2, err := socket.Send(command, zmq.SNDMORE|zmq.DONTWAIT)
+	if nil != err {
 		return err
 	}
-	_, err := socket.SendBytes(data, 0|zmq.DONTWAIT)
+	m3, err := socket.SendBytes(data, 0|zmq.DONTWAIT)
+
+	n1 := len(to)
+	n2 := len(command)
+	n3 := len(data)
+
+	log.Infof("sp: %d/%d  %d/%d  %d/%d", m1, n1, m2, n2, m3, n3)
 
 	return err
 }
