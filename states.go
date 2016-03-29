@@ -548,11 +548,11 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 		for to, c := range twoway.connections {
 			switch c.state {
 			case stateConnected, stateCheck:
-				log.Debugf("RPC/%s →%s (%x)", opCallOrCast, to, packet)
+				log.Infof("RPC/%s →%q (%x)", opCallOrCast, to, packet)
 				sendPacket(twoway.outgoingSocket, to, opCallOrCast, packet)
 				request.count += 1
 			case stateServing:
-				log.Debugf("RPC/%s %s← (%x)", opCallOrCast, to, packet)
+				log.Infof("RPC/%s %q← (%x)", opCallOrCast, to, packet)
 				sendPacket(twoway.listenSocket, to, opCallOrCast, packet)
 				request.count += 1
 			default:
@@ -566,11 +566,11 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 			}
 			switch c.state {
 			case stateConnected, stateCheck:
-				log.Debugf("RPC/%s →%s (%x)", opCallOrCast, to, packet)
+				log.Infof("RPC/%s →%q (%x)", opCallOrCast, to, packet)
 				sendPacket(twoway.outgoingSocket, to, opCallOrCast, packet)
 				request.count += 1
 			case stateServing:
-				log.Debugf("RPC/%s %s← (%x)", opCallOrCast, to, packet)
+				log.Infof("RPC/%s %q← (%x)", opCallOrCast, to, packet)
 				sendPacket(twoway.listenSocket, to, opCallOrCast, packet)
 				request.count += 1
 			default:
