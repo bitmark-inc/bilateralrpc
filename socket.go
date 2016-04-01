@@ -30,7 +30,7 @@ func createSocket(st socketType, publicKey string, privateKey string) (*zmq.Sock
 			//zmq.AuthSetVerbose(true)
 			err := zmq.AuthStart()
 			if nil != err {
-				panic(fmt.Sprintf("zmq.AuthStart(): err = %v", err))
+				panic(fmt.Sprintf("zmq.AuthStart(): error: %v", err))
 			}
 		})
 	}

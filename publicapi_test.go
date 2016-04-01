@@ -146,7 +146,7 @@ func checkResults(t *testing.T, args Args, results []Result, serverNames []strin
 		case from == client2PublicKey:
 			from = "Client2"
 		}
-		t.Logf("%d/%d: from: %q    S: %d  D: %d", i, n, from, r.Reply.S, r.Reply.D)
+		t.Logf("%d/%d: from: %q    S: %d  D: %d", i+1, n, from, r.Reply.S, r.Reply.D)
 	}
 
 	for name, count := range m {
@@ -215,16 +215,16 @@ func TestCall(t *testing.T) {
 	// SumDiffV
 	// --------
 
-	// empty string will result in calls to all active connections
+	// nil string slice will result in calls to all active connections
 	// NOTE: args is pointer, receiver is value
-	if err := client.Call([]string{}, "Arith.SumDiffV", &args, &results, 5*time.Second); nil != err {
+	if err := client.Call(nil, "Arith.SumDiffV", &args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{serverName})
 
-	// empty string will result in calls to all active connections
+	// nil string slice will result in calls to all active connections
 	// NOTE: args is value, receiver is value
-	if err := server.Call([]string{}, "Arith.SumDiffV", args, &results, 5*time.Second); nil != err {
+	if err := server.Call(nil, "Arith.SumDiffV", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("reverse Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{clientName})
@@ -232,16 +232,16 @@ func TestCall(t *testing.T) {
 	// SumDiffP
 	// --------
 
-	// empty string will result in calls to all active connections
+	// nil string slice will result in calls to all active connections
 	// NOTE: args is pointer, receiver is pointer
-	if err := client.Call([]string{}, "Arith.SumDiffP", &args, &results, 5*time.Second); nil != err {
+	if err := client.Call(nil, "Arith.SumDiffP", &args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{serverName})
 
-	// empty string will result in calls to all active connections
+	// nil string slice will result in calls to all active connections
 	// NOTE: args is value, receiver is pointer
-	if err := server.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	if err := server.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("reverse Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{clientName})
@@ -299,8 +299,8 @@ func runCast(t *testing.T, client *bilateralrpc.Bilateral, expectedFrom string, 
 		t.Fatal("last.Value is not initially zero")
 	}
 
-	// empty string will result in calls to all active connections
-	if err := client.Cast([]string{}, "LastItem.Set", args); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := client.Cast(nil, "LastItem.Set", args); nil != err {
 		t.Fatalf("Cast: err = %v", err)
 	}
 
@@ -390,20 +390,20 @@ func TestOneClientTwoServers(t *testing.T) {
 	// SumDiffP
 	// --------
 
-	// empty string will result in calls to all active connections
-	if err := client.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := client.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{server1Name, server2Name})
 
-	// empty string will result in calls to all active connections
-	if err := server1.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := server1.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{clientName})
 
-	// empty string will result in calls to all active connections
-	if err := server2.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := server2.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{clientName})
@@ -452,14 +452,14 @@ func TestEncryptedCall(t *testing.T) {
 	// this will receive slice of results
 	var results []Result
 
-	// empty string will result in calls to all active connections
-	if err := client1.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := client1.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{server1PublicKey})
 
-	// empty string will result in calls to all active connections
-	if err := server1.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := server1.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{client1PublicKey})
@@ -525,20 +525,20 @@ func TestEncryptedOneClientTwoServers(t *testing.T) {
 	// this will receive slice of results
 	var results []Result
 
-	// empty string will result in calls to all active connections
-	if err := client1.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := client1.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{server1PublicKey, server2PublicKey})
 
-	// empty string will result in calls to all active connections
-	if err := server1.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := server1.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{client1PublicKey})
 
-	// empty string will result in calls to all active connections
-	if err := server2.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := server2.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{client1PublicKey})
@@ -599,20 +599,20 @@ func TestEncryptedTwoClientaOneServers(t *testing.T) {
 	// this will receive slice of results
 	var results []Result
 
-	// empty string will result in calls to all active connections
-	if err := client1.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := client1.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{server1PublicKey})
 
-	// empty string will result in calls to all active connections
-	if err := client2.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := client2.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{server1PublicKey})
 
-	// empty string will result in calls to all active connections
-	if err := server1.Call([]string{}, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
+	// nil string slice will result in calls to all active connections
+	if err := server1.Call(nil, "Arith.SumDiffP", args, &results, 5*time.Second); nil != err {
 		t.Fatalf("Call: err = %v", err)
 	}
 	checkResults(t, args, results, []string{client1PublicKey, client2PublicKey})

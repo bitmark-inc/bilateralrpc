@@ -19,10 +19,10 @@ import (
 // limits
 const (
 	tickTime       = 50 * time.Millisecond
-	reactorRunTime = 50 * time.Millisecond
+	reactorRunTime = 20 * time.Millisecond
 
-	channelRequests = 4  // number of channel requests to handle each cycle (0 =>all)
-	channelBuffers  = 10 // size of RPC channel buffers
+	channelRequests = 0  // number of channel requests to handle each cycle (0 =>all)
+	channelBuffers  = 50 // size of RPC channel buffers
 )
 
 // sent to all connections value for Call
@@ -128,13 +128,13 @@ func createBilateral(networkName string, configuration ...string) *Bilateral {
 		// this is our server side
 		twoway.listenSocket, err = createSocket(plainSocket, twoway.serverName, "")
 		if nil != err {
-			panic(fmt.Sprintf("listen socket: err = %v", err))
+			panic(fmt.Sprintf("listen socket: error: %v", err))
 		}
 
 		// prepare socket to connect to to multiple upstreams
 		twoway.outgoingSocket, err = createSocket(plainSocket, twoway.serverName, "")
 		if nil != err {
-			panic(fmt.Sprintf("outgoing socket: err = %v", err))
+			panic(fmt.Sprintf("outgoing socket: error: %v", err))
 		}
 
 	case 2:
@@ -143,13 +143,13 @@ func createBilateral(networkName string, configuration ...string) *Bilateral {
 		// this is our server side
 		twoway.listenSocket, err = createSocket(serverSocket, twoway.serverName, configuration[1])
 		if nil != err {
-			panic(fmt.Sprintf("listen socket: err = %v", err))
+			panic(fmt.Sprintf("listen socket: error: %v", err))
 		}
 
 		// prepare socket to connect to to multiple upstreams
 		twoway.outgoingSocket, err = createSocket(clientSocket, twoway.serverName, configuration[1])
 		if nil != err {
-			panic(fmt.Sprintf("outgoing socket: err = %v", err))
+			panic(fmt.Sprintf("outgoing socket: error: %v", err))
 		}
 	}
 
@@ -191,10 +191,10 @@ func createBilateral(networkName string, configuration ...string) *Bilateral {
 			if nil == err {
 				break // normal termination
 			} else if zmq.Errno(syscall.EINTR) != zmq.AsErrno(err) {
-				log.Errorf("reactor failed: err = %v", err)
+				//log.Errorf("reactor failed: error: %v", err)
 				break
 			}
-			log.Errorf("reactor retry: err = %v", err)
+			log.Errorf("reactor retry: error: %v", err)
 		}
 		log.Info("reactor stopped")
 	}()
