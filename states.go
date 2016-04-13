@@ -35,7 +35,9 @@ const (
 	SEND_TIMEOUT = 0                     // 0 => fail immediately if no buffer space for send
 
 	// default timeout for Call()
-	CALL_TIMEOUT = 5 * time.Second // only used if zero is passed
+	MINIMUM_CALL_TIMEOUT = 200 * time.Millisecond
+	DEFAULT_CALL_TIMEOUT = 2000 * time.Millisecond // used if no tiemout is passed is passed
+	DEFAULT_RETRIES      = 3
 )
 
 //
@@ -103,7 +105,7 @@ type rpcClientRequestData struct {
 	method     string
 	args       interface{}
 	structType reflect.Type
-	wait       time.Duration
+	timeout    time.Duration
 	done       chan *rpcClientRequestData
 	reply      chan reflect.Value // rpcClientReplyData
 	count      uint
@@ -115,7 +117,7 @@ type queueItem struct {
 	timestamp time.Time
 }
 
-// called every "tickTime" se createBilateral
+// called every "tickTime" see: createBilateral
 func (twoway *Bilateral) sender() (err error) {
 	t := time.Now()
 	for e := twoway.timeoutQueue.Front(); nil != e; e = e.Prev() {
@@ -596,6 +598,7 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 	}
 
 	// nothing sent so nothing expected, just finish the request
+	// or if a CAST so no reply is expected
 	if 0 == request.count || nil == request.done {
 		log.Debugf("nothing was sent / no reply expected: count: %d", request.count)
 		twoway.finishRequest(request)
@@ -606,7 +609,7 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 	request.reply = make(chan reflect.Value, request.count)
 
 	// queue for processing
-	twoway.insertEvent(request.id, request.wait)
+	twoway.insertEvent(request.id, request.timeout)
 
 	return nil
 }
@@ -709,6 +712,12 @@ func (twoway *Bilateral) rpcClientResponseHandler(item interface{}) error {
 
 // insert an entry into the time out queue
 func (twoway *Bilateral) insertEvent(id uint32, delay time.Duration) {
+
+	// if no timeout required
+	if 0 == delay {
+		return
+	}
+
 	t := time.Now().Add(delay)
 	v := queueItem{
 		timestamp: t,

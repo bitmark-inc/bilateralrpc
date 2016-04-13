@@ -315,14 +315,20 @@ func (twoway *Bilateral) ActiveConnections() []string {
 
 // rpc call routine and receive reply, waiting if necessary
 // to can be set to SendToAll to do a broadcast
-func (twoway *Bilateral) Call(to []string, method string, args interface{}, results interface{}, wait time.Duration) error {
+func (twoway *Bilateral) Call(to []string, method string, args interface{}, results interface{}, optionalTimeout ...time.Duration) error {
 
 	if nil != to && 0 == len(to) {
 		to = nil
 	}
 
-	if 0 == wait {
-		wait = CALL_TIMEOUT
+	timeout := DEFAULT_CALL_TIMEOUT
+	if len(optionalTimeout) == 1 {
+		timeout = optionalTimeout[0]
+	} else if len(optionalTimeout) == 1 {
+		return errors.New("too many timeout values")
+	}
+	if timeout < MINIMUM_CALL_TIMEOUT {
+		return errors.New("timeout is too short")
 	}
 
 	select {
@@ -368,7 +374,7 @@ func (twoway *Bilateral) Call(to []string, method string, args interface{}, resu
 	twoway.rpcClientRequestChannel <- &rpcClientRequestData{
 		id:         id,
 		to:         to,
-		wait:       wait,
+		timeout:    timeout,
 		method:     method,
 		args:       args,
 		structType: theStruct,
@@ -377,9 +383,20 @@ func (twoway *Bilateral) Call(to []string, method string, args interface{}, resu
 		count:      0,   // added later
 	}
 
-	log.Infof("wait for result for method: %s", method)
-	// the processed request will be returned here
-	request := <-done
+	// do retries
+	var request *rpcClientRequestData
+loop:
+	for retry := 0; retry < DEFAULT_RETRIES; retry += 1 {
+		log.Infof("wait for result for method: %s", method)
+		// the processed request will be returned here
+		request = <-done
+		if nil != request.reply {
+			break loop
+		}
+		twoway.rpcClientRequestChannel <- request
+		log.Infof("timeout method: %s : %v", method, request)
+	}
+
 	log.Infof("result for method: %s : %v", method, request)
 
 	if nil == request.reply {
@@ -415,7 +432,7 @@ func (twoway *Bilateral) Cast(to []string, method string, args interface{}) erro
 	twoway.rpcClientRequestChannel <- &rpcClientRequestData{
 		id:         id,
 		to:         to,
-		wait:       CALL_TIMEOUT,
+		timeout:    DEFAULT_CALL_TIMEOUT, // not used
 		method:     method,
 		args:       args,
 		structType: nil,
