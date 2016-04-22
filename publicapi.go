@@ -390,7 +390,7 @@ loop:
 		log.Infof("wait for result for method: %s", method)
 		// the processed request will be returned here
 		request = <-done
-		if nil != request.reply {
+		if nil != request.reply && len(request.reply) > 0 {
 			break loop
 		}
 		twoway.rpcClientRequestChannel <- request
@@ -399,7 +399,7 @@ loop:
 
 	log.Debugf("request for method: %s : %v", method, request)
 
-	if nil == request.reply {
+	if nil == request.reply || len(request.reply) == 0 {
 		return errors.New("no results")
 	}
 
