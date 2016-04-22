@@ -393,6 +393,7 @@ loop:
 		if nil != request.reply && len(request.reply) > 0 {
 			break loop
 		}
+		request.reply = nil
 		twoway.rpcClientRequestChannel <- request
 		log.Infof("timeout method: %s : %v", method, request)
 	}
