@@ -397,7 +397,7 @@ loop:
 		log.Infof("timeout method: %s : %v", method, request)
 	}
 
-	log.Infof("result for method: %s : %v", method, request)
+	log.Debugf("request for method: %s : %v", method, request)
 
 	if nil == request.reply {
 		return errors.New("no results")
@@ -408,8 +408,7 @@ loop:
 		received = reflect.Append(received, r.Elem())
 	}
 	reflect.ValueOf(results).Elem().Set(received)
-	log.Infof("final for method: %s", method)
-	log.Tracef("final results: %x", results)
+	log.Debugf("Result for method: %s : %v", method, results)
 
 	return nil
 }
