@@ -637,9 +637,9 @@ func (twoway *Bilateral) rpcClientResponseHandler(item interface{}) error {
 
 	case rpcClientTimeoutData: // handle a timeout message
 		timeout := item.(rpcClientTimeoutData)
-		fmt.Printf("timeout id: %d request: %v\n", timeout.id, request)
 		if request, ok := twoway.rpcReturns[timeout.id]; ok {
 			log.Infof("timeout id: %d  request: %v", timeout.id, request)
+			fmt.Printf("timeout id: %d request: %v\n", timeout.id, request)
 			twoway.finishRequest(request)
 		}
 		return nil
