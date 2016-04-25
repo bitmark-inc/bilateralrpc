@@ -390,6 +390,8 @@ loop:
 		log.Infof("wait for result for method: %s", method)
 		// the processed request will be returned here
 		request = <-done
+		log.Debugf("request for method in loop: %s : %v", method, request)
+		time.Sleep(20*time.Millisecond)
 		if nil != request.reply && len(request.reply) > 0 {
 			break loop
 		}
