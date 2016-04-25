@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	zmq "github.com/pebbe/zmq4"
 	"reflect"
 	"time"
@@ -618,6 +619,7 @@ func (twoway *Bilateral) rpcClientRequestHandler(item interface{}) error {
 // allowing the Call to return any accumulated results
 func (twoway *Bilateral) finishRequest(request *rpcClientRequestData) {
 	log.Debugf("finish: %v", request)
+	fmt.Printf("finish: %v\n", request)
 	if nil != request.reply {
 		close(request.reply)
 	}
@@ -635,8 +637,9 @@ func (twoway *Bilateral) rpcClientResponseHandler(item interface{}) error {
 
 	case rpcClientTimeoutData: // handle a timeout message
 		timeout := item.(rpcClientTimeoutData)
+		fmt.Printf("timeout id: %d request: %v\n", timeout.id, request)
 		if request, ok := twoway.rpcReturns[timeout.id]; ok {
-			log.Infof("timeout id: %d", timeout.id)
+			log.Infof("timeout id: %d  request: %v", timeout.id, request)
 			twoway.finishRequest(request)
 		}
 		return nil
