@@ -337,8 +337,6 @@ func (twoway *Bilateral) Call(to []string, method string, args interface{}, resu
 	default:
 	}
 
-	id := nonce()
-
 	ptr := reflect.TypeOf(results)
 	if reflect.Ptr != ptr.Kind() && !reflect.ValueOf(results).IsNil() && reflect.Slice != ptr.Elem().Kind() {
 		return errors.New("must be a non-nil pointer to slice")
@@ -372,7 +370,7 @@ func (twoway *Bilateral) Call(to []string, method string, args interface{}, resu
 
 	log.Infof("send for method: %s", method)
 	twoway.rpcClientRequestChannel <- &rpcClientRequestData{
-		id:         id,
+		id:         nonce(),
 		to:         to,
 		timeout:    timeout,
 		method:     method,
@@ -400,8 +398,9 @@ loop:
 		// request.id = nonce()
 		// request.reply = nil
 		// twoway.rpcClientRequestChannel <- request
+		done = make(chan *rpcClientRequestData)
 		twoway.rpcClientRequestChannel <- &rpcClientRequestData{
-			id:         id,
+			id:         nonce(),
 			to:         to,
 			timeout:    timeout,
 			method:     method,
