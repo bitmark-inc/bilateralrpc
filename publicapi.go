@@ -397,9 +397,20 @@ loop:
 		if nil != request.reply && len(request.reply) > 0 {
 			break loop
 		}
-		request.id = nonce()
-		request.reply = nil
-		twoway.rpcClientRequestChannel <- request
+		// request.id = nonce()
+		// request.reply = nil
+		// twoway.rpcClientRequestChannel <- request
+		twoway.rpcClientRequestChannel <- &rpcClientRequestData{
+			id:         id,
+			to:         to,
+			timeout:    timeout,
+			method:     method,
+			args:       args,
+			structType: theStruct,
+			done:       done,
+			reply:      nil, // added later
+			count:      0,   // added later
+		}
 		log.Infof("timeout method: %s : %v", method, request)
 	}
 
